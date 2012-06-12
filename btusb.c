@@ -29,13 +29,17 @@
 #include <linux/sched.h>
 #include <linux/errno.h>
 #include <linux/skbuff.h>
+#include <linux/delay.h>
 
 #include <linux/usb.h>
+#include <linux/firmware.h>
 
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
 
 #define VERSION "0.6"
+#define PATCHRAM_FIRMWARE	"bcm_patchram.hcd"
+#define PATCHRAM_TIMEOUT	1000
 
 static int ignore_dga;
 static int ignore_csr;
@@ -55,6 +59,7 @@ static struct usb_driver btusb_driver;
 #define BTUSB_BROKEN_ISOC	0x20
 #define BTUSB_WRONG_SCO_MTU	0x40
 #define BTUSB_ATH3012		0x80
+#define BTUSB_BCM_PATCHRAM	0x100
 
 static struct usb_device_id btusb_table[] = {
 	/* Generic Bluetooth USB device */
@@ -101,6 +106,11 @@ static struct usb_device_id btusb_table[] = {
 	{ USB_DEVICE(0x0c10, 0x0000) },
 
 	/* Broadcom BCM20702A0 */
+	{ USB_DEVICE(0x14e4, 0x4365), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x0489, 0xe027), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x0489, 0xe031), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x0a5c, 0x21d3), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x0a5c, 0x21d7), .driver_info = BTUSB_BCM_PATCHRAM },
 	{ USB_DEVICE(0x0489, 0xe042) },
 	{ USB_DEVICE(0x0a5c, 0x21e1) },
 	{ USB_DEVICE(0x0a5c, 0x21e3) },
@@ -903,6 +913,73 @@ static void btusb_waker(struct work_struct *work)
 	usb_autopm_put_interface(data->intf);
 }
 
+static inline void load_patchram_fw(struct usb_device *udev)
+{
+	const struct firmware *fw;
+	size_t pos = 0;
+	int err = 0;
+
+	unsigned char reset_cmd[] = { 0x03, 0x0c, 0x00 };
+	unsigned char download_cmd[] = { 0x2e, 0xfc, 0x00 };
+
+	if (request_firmware(&fw, PATCHRAM_FIRMWARE, &udev->dev) < 0) {
+		BT_INFO("can't load firmware, may not work correctly");
+		return;
+	}
+
+	BT_INFO("send reset cmd, %d", sizeof(reset_cmd));
+	if (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0,
+		reset_cmd, sizeof(reset_cmd), PATCHRAM_TIMEOUT) < 0) {
+		err = -1;
+		goto out;
+	}
+	msleep(300);
+
+	BT_INFO("send download cmd");
+	if (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0,
+		download_cmd, sizeof(download_cmd), PATCHRAM_TIMEOUT) < 0) {
+		err = -1;
+		goto out;
+	}
+	msleep(300);
+
+	BT_INFO("send img: %d", fw->size);
+	while (pos < fw->size) {
+		size_t len;
+		len = fw->data[pos + 2] + 3;
+		BT_INFO("%02X %02X %02X, pos=%d len=%d", fw->data[pos], fw->data[pos + 1], fw->data[pos + 2], pos, len);
+		//if ((pos + len > fw->size) ||
+		//	(usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0,
+		//	USB_TYPE_CLASS, 0, 0, fw->data + pos, len, PATCHRAM_TIMEOUT) < 0)) {
+		if (pos + len > fw->size) {
+			BT_INFO("err1");
+			err = -1;
+			goto out;
+		}
+		//if (send_patchram_cmd(udev, fw->data + pos, len) < 0) {
+		if (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0,
+			fw->data + pos, len, PATCHRAM_TIMEOUT) < 0) {
+			BT_INFO("err2");
+			err = -1;
+			goto out;
+		}
+		pos += len;
+		//msleep(1000);
+	}
+
+	BT_INFO("send reset cmd");
+	//if (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0, reset_cmd, 3, PATCHRAM_TIMEOUT) == 3)
+	//	mspleep(300);
+	//else
+	//	err = -1;
+	err = (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0,
+		reset_cmd, sizeof(reset_cmd), PATCHRAM_TIMEOUT) < 0);
+out:
+	if (err)
+		BT_INFO("fail to load firmware, may not work correctly");
+	release_firmware(fw);
+}
+
 static int btusb_probe(struct usb_interface *intf,
 				const struct usb_device_id *id)
 {
@@ -1078,6 +1155,9 @@ static int btusb_probe(struct usb_interface *intf,
 	}
 
 	usb_set_intfdata(intf, data);
+
+	if (id->driver_info & BTUSB_BCM_PATCHRAM)
+		load_patchram_fw(interface_to_usbdev(intf));
 
 	return 0;
 }
@@ -1263,3 +1343,4 @@ MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Generic Bluetooth USB driver ver " VERSION);
 MODULE_VERSION(VERSION);
 MODULE_LICENSE("GPL");
+MODULE_FIRMWARE(PATCHRAM_FIRMWARE);
