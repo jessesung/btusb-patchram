@@ -105,18 +105,19 @@ static struct usb_device_id btusb_table[] = {
 	{ USB_DEVICE(0x0c10, 0x0000) },
 
 	/* Broadcom BCM20702A0 */
-	{ USB_DEVICE(0x14e4, 0x4365), .driver_info = BTUSB_BCM_PATCHRAM },
-	{ USB_DEVICE(0x0489, 0xe027), .driver_info = BTUSB_BCM_PATCHRAM },
+	//{ USB_DEVICE(0x14e4, 0x4365), .driver_info = BTUSB_BCM_PATCHRAM },
+	//{ USB_DEVICE(0x0489, 0xe027), .driver_info = BTUSB_BCM_PATCHRAM },
 	{ USB_DEVICE(0x0489, 0xe031), .driver_info = BTUSB_BCM_PATCHRAM },
 	{ USB_DEVICE(0x0a5c, 0x21d3), .driver_info = BTUSB_BCM_PATCHRAM },
 	{ USB_DEVICE(0x0a5c, 0x21d7), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x413c, 0x8197), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x0a5c, 0x21e6), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x0a5c, 0x21f3), .driver_info = BTUSB_BCM_PATCHRAM },
+	{ USB_DEVICE(0x0a5c, 0x21f4), .driver_info = BTUSB_BCM_PATCHRAM },
 	{ USB_DEVICE(0x0489, 0xe042) },
 	{ USB_DEVICE(0x0a5c, 0x21e1) },
 	{ USB_DEVICE(0x0a5c, 0x21e3) },
-	{ USB_DEVICE(0x0a5c, 0x21e6) },
 	{ USB_DEVICE(0x0a5c, 0x21e8) },
-	{ USB_DEVICE(0x0a5c, 0x21f3) },
-	{ USB_DEVICE(0x413c, 0x8197) },
 
 	/* Foxconn - Hon Hai */
 	{ USB_DEVICE(0x0489, 0xe033) },
@@ -226,6 +227,7 @@ MODULE_FIRMWARE(FW_413C_8197);
 static struct usb_device_id patchram_table[] = {
 	/* Dell DW1704 */
 	{ USB_DEVICE(0x0a5c, 0x21d3), .driver_info = (kernel_ulong_t) FW_0A5C_21D3 },
+	{ USB_DEVICE(0x0a5c, 0x21d7), .driver_info = (kernel_ulong_t) FW_0A5C_21D3 },
 	/* Dell DW380 */
 	{ USB_DEVICE(0x413c, 0x8197), .driver_info = (kernel_ulong_t) FW_413C_8197 },
 	/* FoxConn Hon Hai */
