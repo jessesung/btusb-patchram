@@ -278,6 +278,9 @@ struct btusb_data {
 	unsigned int sco_num;
 	int isoc_altsetting;
 	int suspend_count;
+
+	u8 *firmware;
+	size_t fw_size;
 };
 
 static int inc_tx(struct btusb_data *data)
@@ -950,18 +953,29 @@ static void btusb_waker(struct work_struct *work)
 	usb_autopm_put_interface(data->intf);
 }
 
-static inline void load_patchram_fw(struct usb_device *udev, const char *firmware)
+static inline void load_patchram_fw(struct usb_device *udev, struct btusb_data *data, const char *firmware)
 {
-	const struct firmware *fw;
 	size_t pos = 0;
 	int err = 0;
 
 	unsigned char reset_cmd[] = { 0x03, 0x0c, 0x00 };
 	unsigned char download_cmd[] = { 0x2e, 0xfc, 0x00 };
 
-	if (request_firmware(&fw, firmware, &udev->dev) < 0) {
-		BT_INFO("can't load firmware, may not work correctly");
-		return;
+	if (!data->firmware) {
+		const struct firmware *fw;
+		if (request_firmware(&fw, firmware, &udev->dev) < 0) {
+			BT_INFO("can't load firmware, may not work correctly");
+			return;
+		}
+		data->firmware = kmalloc(fw->size, GFP_KERNEL);
+		if (!data->firmware) {
+			BT_INFO("OOM");
+			release_firmware(fw);
+			return;
+		}
+		data->fw_size = fw->size;
+		memcpy(data->firmware, fw->data, data->fw_size);
+		release_firmware(fw);
 	}
 
 	BT_INFO("send reset cmd, %d", sizeof(reset_cmd));
@@ -980,22 +994,22 @@ static inline void load_patchram_fw(struct usb_device *udev, const char *firmwar
 	}
 	msleep(300);
 
-	BT_INFO("send img: %d", fw->size);
-	while (pos < fw->size) {
+	BT_INFO("send img: %d", data->fw_size);
+	while (pos < data->fw_size) {
 		size_t len;
-		len = fw->data[pos + 2] + 3;
-		BT_INFO("%02X %02X %02X, pos=%d len=%d", fw->data[pos], fw->data[pos + 1], fw->data[pos + 2], pos, len);
+		len = data->firmware[pos + 2] + 3;
+		BT_INFO("%02X %02X %02X, pos=%d len=%d", data->firmware[pos], data->firmware[pos + 1], data->firmware[pos + 2], pos, len);
 		//if ((pos + len > fw->size) ||
 		//	(usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0,
 		//	USB_TYPE_CLASS, 0, 0, fw->data + pos, len, PATCHRAM_TIMEOUT) < 0)) {
-		if (pos + len > fw->size) {
+		if (pos + len > data->fw_size) {
 			BT_INFO("err1");
 			err = -1;
 			goto out;
 		}
 		//if (send_patchram_cmd(udev, fw->data + pos, len) < 0) {
 		if (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0,
-			fw->data + pos, len, PATCHRAM_TIMEOUT) < 0) {
+			data->firmware + pos, len, PATCHRAM_TIMEOUT) < 0) {
 			BT_INFO("err2");
 			err = -1;
 			goto out;
@@ -1014,7 +1028,6 @@ static inline void load_patchram_fw(struct usb_device *udev, const char *firmwar
 out:
 	if (err)
 		BT_INFO("fail to load firmware, may not work correctly");
-	release_firmware(fw);
 }
 
 static int btusb_probe(struct usb_interface *intf,
@@ -1197,7 +1210,7 @@ static int btusb_probe(struct usb_interface *intf,
 		const struct usb_device_id *match;
 		match = usb_match_id(intf, patchram_table);
 		if (match)
-			load_patchram_fw(interface_to_usbdev(intf), (const char *) match->driver_info);
+			load_patchram_fw(interface_to_usbdev(intf), data, (const char *) match->driver_info);
 	}
 
 	return 0;
