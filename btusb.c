@@ -224,18 +224,33 @@ MODULE_FIRMWARE(FW_0A5C_21F3);
 MODULE_FIRMWARE(FW_0A5C_21F4);
 MODULE_FIRMWARE(FW_413C_8197);
 
+struct firmware_cache {
+	const char *filename;
+	u8* data;
+	size_t size;
+};
+
+static struct firmware_cache firmware[] = {
+	{ .filename = FW_0489_E031, },
+	{ .filename = FW_0A5C_21D3, },
+	{ .filename = FW_0A5C_21E6, },
+	{ .filename = FW_0A5C_21F3, },
+	{ .filename = FW_0A5C_21F4, },
+	{ .filename = FW_413C_8197, },
+};
+
 static struct usb_device_id patchram_table[] = {
 	/* Dell DW1704 */
-	{ USB_DEVICE(0x0a5c, 0x21d3), .driver_info = (kernel_ulong_t) FW_0A5C_21D3 },
-	{ USB_DEVICE(0x0a5c, 0x21d7), .driver_info = (kernel_ulong_t) FW_0A5C_21D3 },
+	{ USB_DEVICE(0x0a5c, 0x21d3), .driver_info = (kernel_ulong_t) &firmware[1] },
+	{ USB_DEVICE(0x0a5c, 0x21d7), .driver_info = (kernel_ulong_t) &firmware[1] },
 	/* Dell DW380 */
-	{ USB_DEVICE(0x413c, 0x8197), .driver_info = (kernel_ulong_t) FW_413C_8197 },
+	{ USB_DEVICE(0x413c, 0x8197), .driver_info = (kernel_ulong_t) &firmware[5] },
 	/* FoxConn Hon Hai */
-	{ USB_DEVICE(0x0489, 0xe031), .driver_info = (kernel_ulong_t) FW_0489_E031 },
+	{ USB_DEVICE(0x0489, 0xe031), .driver_info = (kernel_ulong_t) &firmware[0] },
 	/* Lenovo */
-	{ USB_DEVICE(0x0a5c, 0x21e6), .driver_info = (kernel_ulong_t) FW_0A5C_21E6 },
-	{ USB_DEVICE(0x0a5c, 0x21f3), .driver_info = (kernel_ulong_t) FW_0A5C_21F3 },
-	{ USB_DEVICE(0x0a5c, 0x21f4), .driver_info = (kernel_ulong_t) FW_0A5C_21F4 },
+	{ USB_DEVICE(0x0a5c, 0x21e6), .driver_info = (kernel_ulong_t) &firmware[2] },
+	{ USB_DEVICE(0x0a5c, 0x21f3), .driver_info = (kernel_ulong_t) &firmware[3] },
+	{ USB_DEVICE(0x0a5c, 0x21f4), .driver_info = (kernel_ulong_t) &firmware[4] },
 };
 
 #define BTUSB_MAX_ISOC_FRAMES	10
@@ -953,28 +968,30 @@ static void btusb_waker(struct work_struct *work)
 	usb_autopm_put_interface(data->intf);
 }
 
-static inline void load_patchram_fw(struct usb_device *udev, struct btusb_data *data, const char *firmware)
+static inline void load_patchram_fw(struct usb_device *udev, struct usb_device_id *id)
 {
 	size_t pos = 0;
 	int err = 0;
+	struct firmware_cache *fwcache;
 
 	unsigned char reset_cmd[] = { 0x03, 0x0c, 0x00 };
 	unsigned char download_cmd[] = { 0x2e, 0xfc, 0x00 };
 
-	if (!data->firmware) {
+	fwcache = (struct firmware_cache *)id->driver_info;
+	if (!fwcache->data) {
 		const struct firmware *fw;
-		if (request_firmware(&fw, firmware, &udev->dev) < 0) {
+		if (request_firmware(&fw, fwcache->filename, &udev->dev) < 0) {
 			BT_INFO("can't load firmware, may not work correctly");
 			return;
 		}
-		data->firmware = kmalloc(fw->size, GFP_KERNEL);
-		if (!data->firmware) {
+		fwcache->data = kmalloc(fw->size, GFP_KERNEL);
+		if (!fwcache->data) {
 			BT_INFO("OOM");
 			release_firmware(fw);
 			return;
 		}
-		data->fw_size = fw->size;
-		memcpy(data->firmware, fw->data, data->fw_size);
+		fwcache->size = fw->size;
+		memcpy(fwcache->data, fw->data, fwcache->size);
 		release_firmware(fw);
 	}
 
@@ -994,22 +1011,22 @@ static inline void load_patchram_fw(struct usb_device *udev, struct btusb_data *
 	}
 	msleep(300);
 
-	BT_INFO("send img: %d", data->fw_size);
-	while (pos < data->fw_size) {
+	BT_INFO("send img: %d", fwcache->size);
+	while (pos < fwcache->size) {
 		size_t len;
-		len = data->firmware[pos + 2] + 3;
-		BT_INFO("%02X %02X %02X, pos=%d len=%d", data->firmware[pos], data->firmware[pos + 1], data->firmware[pos + 2], pos, len);
+		len = fwcache->data[pos + 2] + 3;
+		BT_INFO("%02X %02X %02X, pos=%d len=%d", fwcache->data[pos], fwcache->data[pos + 1], fwcache->data[pos + 2], pos, len);
 		//if ((pos + len > fw->size) ||
 		//	(usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0,
 		//	USB_TYPE_CLASS, 0, 0, fw->data + pos, len, PATCHRAM_TIMEOUT) < 0)) {
-		if (pos + len > data->fw_size) {
+		if (pos + len > fwcache->size) {
 			BT_INFO("err1");
 			err = -1;
 			goto out;
 		}
 		//if (send_patchram_cmd(udev, fw->data + pos, len) < 0) {
 		if (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0,
-			data->firmware + pos, len, PATCHRAM_TIMEOUT) < 0) {
+			fwcache->data + pos, len, PATCHRAM_TIMEOUT) < 0) {
 			BT_INFO("err2");
 			err = -1;
 			goto out;
@@ -1207,10 +1224,10 @@ static int btusb_probe(struct usb_interface *intf,
 	usb_set_intfdata(intf, data);
 
 	if (id->driver_info & BTUSB_BCM_PATCHRAM) {
-		const struct usb_device_id *match;
+		struct usb_device_id *match;
 		match = usb_match_id(intf, patchram_table);
 		if (match)
-			load_patchram_fw(interface_to_usbdev(intf), data, (const char *) match->driver_info);
+			load_patchram_fw(interface_to_usbdev(intf), match);
 	}
 
 	return 0;
@@ -1369,6 +1386,10 @@ static int __init btusb_init(void)
 
 static void __exit btusb_exit(void)
 {
+	int i;
+	for (i = 0; i < sizeof(firmware) / sizeof(firmware[0]); i++)
+		if (firmware[i].data)
+			kfree(firmware[i].data);
 	usb_deregister(&btusb_driver);
 }
 
