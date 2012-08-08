@@ -993,7 +993,8 @@ static inline void load_patchram_fw(struct usb_device *udev, struct usb_device_i
 		fwcache->size = fw->size;
 		memcpy(fwcache->data, fw->data, fwcache->size);
 		release_firmware(fw);
-	}
+	} else
+		msleep(600);
 
 	BT_INFO("send reset cmd, %d", sizeof(reset_cmd));
 	if (usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0, USB_TYPE_CLASS, 0, 0,
