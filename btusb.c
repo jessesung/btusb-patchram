@@ -968,7 +968,7 @@ static void btusb_waker(struct work_struct *work)
 	usb_autopm_put_interface(data->intf);
 }
 
-static inline void load_patchram_fw(struct usb_device *udev, struct usb_device_id *id)
+static inline void load_patchram_fw(struct usb_device *udev, const struct usb_device_id *id)
 {
 	size_t pos = 0;
 	int err = 0;
@@ -1217,7 +1217,7 @@ static int btusb_probe(struct usb_interface *intf,
 	usb_set_intfdata(intf, data);
 
 	if (id->driver_info & BTUSB_BCM_PATCHRAM) {
-		struct usb_device_id *match;
+		const struct usb_device_id *match;
 		match = usb_match_id(intf, patchram_table);
 		if (match) {
 			btusb_open(hdev);
