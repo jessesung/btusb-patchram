@@ -1214,20 +1214,24 @@ static int btusb_probe(struct usb_interface *intf,
 		}
 	}
 
-	err = hci_register_dev(hdev);
-	if (err < 0) {
-		hci_free_dev(hdev);
-		kfree(data);
-		return err;
-	}
-
 	usb_set_intfdata(intf, data);
 
 	if (id->driver_info & BTUSB_BCM_PATCHRAM) {
 		struct usb_device_id *match;
 		match = usb_match_id(intf, patchram_table);
-		if (match)
+		if (match) {
+			btusb_open(hdev);
 			load_patchram_fw(interface_to_usbdev(intf), match);
+			btusb_close(hdev);
+		}
+	}
+
+	err = hci_register_dev(hdev);
+	if (err < 0) {
+		hci_free_dev(hdev);
+		usb_set_intfdata(intf, NULL);
+		kfree(data);
+		return err;
 	}
 
 	return 0;
